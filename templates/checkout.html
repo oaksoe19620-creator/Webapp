@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Checkout - Telegram Shop</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>💳 Checkout</h1>
+            <nav>
+                <a href="{{ url_for('index') }}" class="nav-link">Back to Shop</a>
+            </nav>
+        </header>
+
+        <div class="checkout-container">
+            <!-- Order Summary -->
+            <div class="order-summary">
+                <h2>Order Summary</h2>
+                <div id="orderItems">
+                    <!-- Items will be populated by JavaScript -->
+                </div>
+                <div class="order-total">
+                    <strong>Total: $<span id="orderTotal">0.00</span></strong>
+                </div>
+            </div>
+
+            <!-- Customer Information -->
+            <div class="customer-info">
+                <h2>Customer Information</h2>
+                <div class="info-display" id="customerInfo">
+                    <p><strong>Username:</strong> <span id="displayUsername">Loading...</span></p>
+                    <p><strong>Name:</strong> <span id="displayName">Loading...</span></p>
+                </div>
+            </div>
+
+            <!-- Payment Method -->
+            <div class="payment-section">
+                <h2>Payment Method</h2>
+                <div class="payment-options">
+                    <label class="payment-option">
+                        <input type="radio" name="payment" value="telegram_pay" checked>
+                        <span class="payment-label">
+                            <strong>Telegram Pay</strong>
+                            <small>Pay directly through Telegram</small>
+                        </span>
+                    </label>
+                    <label class="payment-option">
+                        <input type="radio" name="payment" value="kbz_pay">
+                        <span class="payment-label">
+                            <strong>KBZ Pay</strong>
+                            <small>Transfer to: {{ kbz_pay }}</small>
+                        </span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Payment Instructions -->
+            <div class="payment-instructions" id="paymentInstructions">
+                <h3>Payment Instructions</h3>
+                <div id="telegramPayInstructions" class="instruction-content">
+                    <p>1. Click "Pay with Telegram" button below</p>
+                    <p>2. Complete payment through Telegram</p>
+                    <p>3. Upload payment confirmation screenshot</p>
+                </div>
+                <div id="kbzPayInstructions" class="instruction-content" style="display: none;">
+                    <p>1. Transfer the total amount to: <strong>{{ kbz_pay }}</strong></p>
+                    <p>2. Take a screenshot of the successful transaction</p>
+                    <p>3. Upload the screenshot below as payment proof</p>
+                </div>
+            </div>
+
+            <!-- Payment Proof Upload -->
+            <div class="payment-proof">
+                <h3>Upload Payment Proof</h3>
+                <div class="file-upload">
+                    <input type="file" id="paymentProof" accept="image/*" required>
+                    <label for="paymentProof" class="file-upload-label">
+                        📷 Choose Payment Screenshot
+                    </label>
+                    <div id="uploadPreview" class="upload-preview"></div>
+                </div>
+            </div>
+
+            <!-- Submit Order -->
+            <div class="checkout-actions">
+                <button class="btn btn-primary btn-large" id="submitOrder">
+                    Complete Order
+                </button>
+            </div>
+        </div>
+
+        <!-- Success Modal -->
+        <div class="modal" id="successModal">
+            <div class="modal-content">
+                <h2>✅ Order Submitted Successfully!</h2>
+                <p>Your order has been submitted and is pending admin approval.</p>
+                <p><strong>Order ID:</strong> <span id="orderIdDisplay"></span></p>
+                <p>You will receive a notification once your order is confirmed.</p>
+                <button class="btn btn-primary" onclick="window.location.href='{{ url_for('index') }}'">
+                    Continue Shopping
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize Telegram Web App
+            let tg = window.Telegram.WebApp;
+            tg.ready();
+
+            // Get cart data from localStorage
+            const cart = JSON.parse(localStorage.getItem('cart') || '[]');
+            const user = tg.initDataUnsafe?.user || {
+                id: 'demo_user',
+                username: 'demo_user',
+                first_name: 'Demo',
+                last_name: 'User'
+            };
+
+            // Display customer info
+            document.getElementById('displayUsername').textContent = '@' + (user.username || 'N/A');
+            document.getElementById('displayName').textContent = `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'N/A';
+
+            // Display order items
+            let total = 0;
+            const orderItemsContainer = document.getElementById('orderItems');
+            
+            cart.forEach(item => {
+                const itemTotal = item.price * item.quantity;
+                total += itemTotal;
+                
+                const itemElement = document.createElement('div');
+                itemElement.className = 'order-item';
+                itemElement.innerHTML = `
+                    <div class="item-info">
+                        <img src="${item.image}" alt="${item.name}" class="item-image">
+                        <div>
+                            <h4>${item.name}</h4>
+                            <p>Quantity: ${item.quantity}</p>
+                        </div>
+                    </div>
+                    <div class="item-price">$${itemTotal.toFixed(2)}</div>
+                `;
+                orderItemsContainer.appendChild(itemElement);
+            });
+
+            document.getElementById('orderTotal').textContent = total.toFixed(2);
+
+            // Payment method switching
+            const paymentRadios = document.querySelectorAll('input[name="payment"]');
+            const telegramInstructions = document.getElementById('telegramPayInstructions');
+            const kbzInstructions = document.getElementById('kbzPayInstructions');
+
+            paymentRadios.forEach(radio => {
+                radio.addEventListener('change', function() {
+                    if (this.value === 'telegram_pay') {
+                        telegramInstructions.style.display = 'block';
+                        kbzInstructions.style.display = 'none';
+                    } else {
+                        telegramInstructions.style.display = 'none';
+                        kbzInstructions.style.display = 'block';
+                    }
+                });
+            });
+
+            // File upload preview
+            const paymentProofInput = document.getElementById('paymentProof');
+            const uploadPreview = document.getElementById('uploadPreview');
+
+            paymentProofInput.addEventListener('change', function(e) {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        uploadPreview.innerHTML = `
+                            <img src="${e.target.result}" alt="Payment Proof Preview" class="preview-image">
+                            <p class="file-name">${file.name}</p>
+                        `;
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+
+            // Submit order
+            document.getElementById('submitOrder').addEventListener('click', async function() {
+                if (cart.length === 0) {
+                    alert('Your cart is empty!');
+                    return;
+                }
+
+                const paymentMethod = document.querySelector('input[name="payment"]:checked').value;
+                const paymentProofFile = paymentProofInput.files[0];
+
+                if (!paymentProofFile) {
+                    alert('Please upload payment proof!');
+                    return;
+                }
+
+                try {
+                    // Create order
+                    const orderData = {
+                        user_id: user.id.toString(),
+                        username: user.username || 'unknown',
+                        first_name: user.first_name || '',
+                        last_name: user.last_name || '',
+                        total: total,
+                        payment_method: paymentMethod,
+                        items: cart.map(item => ({
+                            product_id: item.id,
+                            quantity: item.quantity,
+                            price: item.price
+                        }))
+                    };
+
+                    const orderResponse = await fetch('/api/create_order', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(orderData)
+                    });
+
+                    const orderResult = await orderResponse.json();
+
+                    if (orderResult.success) {
+                        // Upload payment proof
+                        const formData = new FormData();
+                        formData.append('payment_proof', paymentProofFile);
+                        formData.append('order_id', orderResult.order_id);
+
+                        const uploadResponse = await fetch('/api/upload_payment_proof', {
+                            method: 'POST',
+                            body: formData
+                        });
+
+                        const uploadResult = await uploadResponse.json();
+
+                        if (uploadResult.success) {
+                            // Clear cart
+                            localStorage.removeItem('cart');
+                            
+                            // Show success modal
+                            document.getElementById('orderIdDisplay').textContent = orderResult.order_id;
+                            document.getElementById('successModal').style.display = 'block';
+                        } else {
+                            alert('Failed to upload payment proof. Please try again.');
+                        }
+                    } else {
+                        alert('Failed to create order. Please try again.');
+                    }
+                } catch (error) {
+                    console.error('Error submitting order:', error);
+                    alert('An error occurred. Please try again.');
+                }
+            });
+
+            // Redirect if cart is empty
+            if (cart.length === 0) {
+                alert('Your cart is empty! Redirecting to shop...');
+                window.location.href = '{{ url_for("index") }}';
+            }
+        });
+    </script>
+</body>
+</html>
